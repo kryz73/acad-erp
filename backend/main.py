@@ -15,7 +15,7 @@ app = FastAPI(title="AcadERP API")
 # Allow the Next.js frontend to call the backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=["http://localhost:3000", "http://localhost:8000" , "http://localhost:5432"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
