@@ -12,14 +12,24 @@ from models.identity import Users
 
 app = FastAPI(title="AcadERP API")
 
-# Allow the Next.js frontend to call the backend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8000" , "http://localhost:5432"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Allow the Next.js frontend to call the backend (including Vercel preview/production domains)
+raw_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+if "*" in raw_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=raw_origins,
+        allow_origin_regex=r"https://.*\.vercel\.app",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Initialize database
 @app.on_event("startup")
