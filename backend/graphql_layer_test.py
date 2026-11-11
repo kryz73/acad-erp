@@ -24,13 +24,13 @@ QUERIES = {
     "getUsers": "query { getUsers { id email } }",
     "getDepartments": "query { getDepartments { id name } }",
     "getStudentProfiles": "query { getStudentProfiles { id firstName } }",
-    "getStudentProfile (Self)": "query { getStudentProfile(profileId: 1) { id firstName } }",
+    "getStudentProfile (Self)": "query { getStudentProfile(profileId: 30) { id firstName } }",
     "getPrograms": "query { getPrograms { id name } }",
-    "getSemesterReg (Self)": "query { getSemesterRegistration(id: 1) { id status } }",
+    "getSemesterReg (Self)": "query { getSemesterRegistration(id: 30) { id status } }",
     "getRooms": "query { getRooms { id code } }",
-    "getStudentMarks (Self)": "query { getStudentMarks(studentId: 1) { id marksObtained } }",
+    "getStudentMarks (Self)": "query { getStudentMarks(studentId: 30) { id marksObtained } }",
     "getExamResults (Self)": "query { getExamResults(examScheduleId: 1) { id marksObtained } }",
-    "getStudentFeeStatus (Self)": "query { getStudentFeeStatus(studentId: 1) { id status } }",
+    "getStudentFeeStatus (Self)": "query { getStudentFeeStatus(studentId: 30) { id status } }",
 }
 
 MUTATIONS = {
@@ -49,7 +49,7 @@ MUTATIONS = {
         mutation {
             recordStudentMarks(
                 componentId: 1,
-                studentId: 1,
+                studentId: 30,
                 marksObtained: 95.5,
                 isAbsent: false
             ) { id }
@@ -58,7 +58,7 @@ MUTATIONS = {
     "registerForSemester (Student Self)": """
         mutation {
             registerForSemester(
-                studentId: 1,
+                studentId: 30,
                 semesterId: 1
             ) { id }
         }
@@ -66,7 +66,7 @@ MUTATIONS = {
     "updateUser (Self)": """
         mutation {
             updateUser(
-                userId: 1,
+                userId: 3,
                 isActive: true
             ) { id }
         }

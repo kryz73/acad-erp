@@ -6,3 +6,5 @@ __pycache__/
 /.vscode/
 front/node_modules/
 front/.next/
+.pytest_cache/
+.coverage

@@ -129,6 +129,15 @@ class OrganizationQuery:
         return [StudentProfileType(**s.dict(exclude={"created_at"})) for s in students]
 
     @strawberry.field(permission_classes=[IsAuthenticated])
+    def get_my_faculty_profile(self, info: strawberry.Info) -> Optional[FacultyProfileType]:
+        session = info.context["session"]
+        current_user_id = info.context.get("user_id")
+        faculty = session.exec(select(FacultyProfileModel).where(FacultyProfileModel.user_id == current_user_id)).first()
+        if faculty:
+            return FacultyProfileType(**faculty.dict(exclude={"created_at"}))
+        return None
+
+    @strawberry.field(permission_classes=[IsAuthenticated])
     def get_offering_faculty(self, info: strawberry.Info, offering_id: int) -> List[FacultyProfileType]:
         session = info.context["session"]
         from models.academics.model import OfferingFaculty as OfferingFacultyModel
@@ -199,3 +208,27 @@ class OrganizationMutation:
         session.commit()
         session.refresh(new_student)
         return StudentProfileType(**new_student.dict(exclude={"created_at"}))
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated])
+    def update_student_target_cgpa(self, info: strawberry.Info, student_id: int, target_cgpa: float) -> Optional[StudentProfileType]:
+        session = info.context["session"]
+        student = session.get(StudentProfileModel, student_id)
+        if not student:
+            return None
+        if not is_elevated_role(info):
+            check_user_ownership(info, student.user_id)
+        student.target_cgpa = target_cgpa
+        session.add(student)
+        session.commit()
+        session.refresh(student)
+        return StudentProfileType(**student.dict(exclude={"created_at"}))
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_department(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        d = session.get(DepartmentModel, id)
+        if d:
+            session.delete(d)
+            session.commit()
+            return True
+        return False

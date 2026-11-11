@@ -234,10 +234,16 @@ class AcademicsMutation:
     @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
     def allocate_faculty_to_offering(self, info: strawberry.Info, offering_id: int, faculty_id: int, role: str = "instructor") -> OfferingFacultyType:
         session = info.context["session"]
-        new_of = OfferingFacultyModel(offering_id=offering_id, faculty_id=faculty_id, role=role)
-        session.add(new_of)
-        session.commit()
-        return OfferingFacultyType(**new_of.dict())
+        new_of = session.get(OfferingFacultyModel, (offering_id, faculty_id))
+        if not new_of:
+            new_of = OfferingFacultyModel(offering_id=offering_id, faculty_id=faculty_id, role=role)
+            session.add(new_of)
+            session.commit()
+        else:
+            new_of.role = role
+            session.add(new_of)
+            session.commit()
+        return OfferingFacultyType(offering_id=offering_id, faculty_id=faculty_id, role=role)
 
     @strawberry.mutation(permission_classes=[IsAuthenticated, IsStudent])
     def register_for_semester(self, info: strawberry.Info, student_id: int, semester_id: int) -> SemesterRegistrationType:
@@ -249,6 +255,13 @@ class AcademicsMutation:
                 check_user_ownership(info, student.user_id)
             else:
                 raise Exception("Student profile not found")
+        existing = session.exec(
+            select(SemesterRegistrationModel)
+            .where(SemesterRegistrationModel.student_id == student_id)
+            .where(SemesterRegistrationModel.semester_id == semester_id)
+        ).first()
+        if existing:
+            return SemesterRegistrationType(**existing.dict())
         new_sr = SemesterRegistrationModel(student_id=student_id, semester_id=semester_id, institute_fee_paid=False, hostel_fee_paid=False, total_credits=0.0, status="pending")
         session.add(new_sr)
         session.commit()
@@ -258,20 +271,54 @@ class AcademicsMutation:
     @strawberry.mutation(permission_classes=[IsAuthenticated, IsStudent])
     def select_subject(self, info: strawberry.Info, registration_id: int, course_offering_id: int, is_backlog: bool = False) -> SubjectRegistrationType:
         session = info.context["session"]
+        sr = session.get(SemesterRegistrationModel, registration_id)
+        if not sr:
+            raise Exception("Registration not found")
         if not is_elevated_role(info):
-            sr = session.get(SemesterRegistrationModel, registration_id)
-            if sr:
-                from models.organization.model import StudentProfiles
-                student = session.get(StudentProfiles, sr.student_id)
-                if student:
-                    check_user_ownership(info, student.user_id)
+            from models.organization.model import StudentProfiles
+            student = session.get(StudentProfiles, sr.student_id)
+            if student:
+                check_user_ownership(info, student.user_id)
             else:
-                raise Exception("Registration not found")
+                raise Exception("Student profile not found")
+        existing = session.exec(
+            select(SubjectRegistrationModel)
+            .where(SubjectRegistrationModel.registration_id == registration_id)
+            .where(SubjectRegistrationModel.course_offering_id == course_offering_id)
+        ).first()
+        if existing:
+            existing.is_backlog = is_backlog
+            session.add(existing)
+            session.commit()
+            session.refresh(existing)
+            return SubjectRegistrationType(**existing.dict())
         new_sub_reg = SubjectRegistrationModel(registration_id=registration_id, course_offering_id=course_offering_id, is_backlog=is_backlog)
         session.add(new_sub_reg)
+        co = session.get(CourseOfferingModel, course_offering_id)
+        if co:
+            c = session.get(CourseModel, co.course_id)
+            if c:
+                sr.total_credits = (sr.total_credits or 0.0) + c.credits
+                session.add(sr)
         session.commit()
         session.refresh(new_sub_reg)
         return SubjectRegistrationType(**new_sub_reg.dict())
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def update_semester_registration_status(self, info: strawberry.Info, registration_id: int, status: str, institute_fee_paid: Optional[bool] = None, hostel_fee_paid: Optional[bool] = None) -> Optional[SemesterRegistrationType]:
+        session = info.context["session"]
+        sr = session.get(SemesterRegistrationModel, registration_id)
+        if not sr:
+            return None
+        sr.status = status
+        if institute_fee_paid is not None:
+            sr.institute_fee_paid = institute_fee_paid
+        if hostel_fee_paid is not None:
+            sr.hostel_fee_paid = hostel_fee_paid
+        session.add(sr)
+        session.commit()
+        session.refresh(sr)
+        return SemesterRegistrationType(**sr.dict())
 
     @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
     def update_registration_window(self, info: strawberry.Info, semester_id: int, start_date: str, end_date: str) -> SemesterType:
@@ -279,10 +326,10 @@ class AcademicsMutation:
         semester = session.get(SemesterModel, semester_id)
         if not semester:
             raise Exception("Semester not found")
-        from datetime import datetime
+        from datetime import datetime, timezone
         try:
-            semester.registration_window_start = datetime.strptime(start_date, "%Y-%m-%d").date()
-            semester.registration_window_end = datetime.strptime(end_date, "%Y-%m-%d").date()
+            semester.registration_window_start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            semester.registration_window_end = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
         except ValueError:
             raise Exception("Invalid date format. Please use YYYY-MM-DD")
         session.add(semester)
@@ -296,6 +343,46 @@ class AcademicsMutation:
         p = session.get(ProgramModel, id)
         if p:
             session.delete(p)
+            session.commit()
+            return True
+        return False
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_course(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        c = session.get(CourseModel, id)
+        if c:
+            session.delete(c)
+            session.commit()
+            return True
+        return False
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_batch(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        b = session.get(BatchModel, id)
+        if b:
+            session.delete(b)
+            session.commit()
+            return True
+        return False
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_course_offering(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        co = session.get(CourseOfferingModel, id)
+        if co:
+            session.delete(co)
+            session.commit()
+            return True
+        return False
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_semester(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        s = session.get(SemesterModel, id)
+        if s:
+            session.delete(s)
             session.commit()
             return True
         return False

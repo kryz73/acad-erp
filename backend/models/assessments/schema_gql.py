@@ -58,6 +58,15 @@ class StudentSemesterResultType:
     total_credits_earned: Optional[float]
 
 @strawberry.type
+class ComponentStatsType:
+    component_id: int
+    average: float
+    median: float
+    highest: float
+    lowest: float
+    total_students: int
+
+@strawberry.type
 class AssessmentsQuery:
     @strawberry.field(permission_classes=[IsAuthenticated])
     def get_assessment_components(self, info: strawberry.Info, offering_id: int) -> List[AssessmentComponentType]:
@@ -73,6 +82,8 @@ class AssessmentsQuery:
             student = session.get(StudentProfiles, student_id)
             if student:
                 check_user_ownership(info, student.user_id)
+            else:
+                raise Exception("Student profile not found")
         query = select(StudentMarksModel).where(StudentMarksModel.student_id == student_id)
         if component_id is not None:
             query = query.where(StudentMarksModel.component_id == component_id)
@@ -93,12 +104,53 @@ class AssessmentsQuery:
             student = session.get(StudentProfiles, student_id)
             if student:
                 check_user_ownership(info, student.user_id)
+            else:
+                raise Exception("Student profile not found")
         result = session.exec(
             select(StudentSemesterResultModel)
             .where(StudentSemesterResultModel.student_id == student_id)
             .where(StudentSemesterResultModel.semester_id == semester_id)
         ).first()
         return StudentSemesterResultType(**result.dict()) if result else None
+
+    @strawberry.field(permission_classes=[IsAuthenticated])
+    def get_offering_grades(self, info: strawberry.Info, offering_id: int) -> List[StudentGradeType]:
+        session = info.context["session"]
+        query = select(StudentGradeModel).where(StudentGradeModel.offering_id == offering_id)
+        if not is_elevated_role(info):
+            current_user_id = info.context.get("user_id")
+            from models.organization.model import StudentProfiles
+            student = session.exec(select(StudentProfiles).where(StudentProfiles.user_id == current_user_id)).first()
+            if not student:
+                return []
+            query = query.where(StudentGradeModel.student_id == student.id).where(StudentGradeModel.is_published == True)
+        grades = session.exec(query).all()
+        return [StudentGradeType(**g.dict(exclude={"published_at"})) for g in grades]
+
+    @strawberry.field(permission_classes=[IsAuthenticated])
+    def get_component_statistics(self, info: strawberry.Info, component_id: int) -> Optional[ComponentStatsType]:
+        session = info.context["session"]
+        marks_records = session.exec(
+            select(StudentMarksModel)
+            .where(StudentMarksModel.component_id == component_id)
+            .where(StudentMarksModel.is_absent == False)
+            .where(StudentMarksModel.marks_obtained != None)
+        ).all()
+        scores = [m.marks_obtained for m in marks_records if m.marks_obtained is not None]
+        if not scores:
+            return None
+        scores.sort()
+        n = len(scores)
+        avg = sum(scores) / n
+        med = scores[n // 2] if n % 2 != 0 else (scores[n // 2 - 1] + scores[n // 2]) / 2.0
+        return ComponentStatsType(
+            component_id=component_id,
+            average=round(avg, 2),
+            median=round(med, 2),
+            highest=max(scores),
+            lowest=min(scores),
+            total_students=n
+        )
 
 @strawberry.type
 class AssessmentsMutation:
@@ -227,6 +279,16 @@ class AssessmentsMutation:
             elif action == "reject":
                 offering.grade_submission_status = "revision_requested"
             session.add(offering)
+            session.commit()
+            return True
+        return False
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_grade_rule(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        rule = session.get(GradeRuleModel, id)
+        if rule:
+            session.delete(rule)
             session.commit()
             return True
         return False

@@ -127,3 +127,23 @@ class ExamsMutation:
             session.commit()
             return True
         return False
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_exam_schedule(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        s = session.get(ExamScheduleModel, id)
+        if s:
+            session.delete(s)
+            session.commit()
+            return True
+        return False
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_exam_result(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        r = session.get(ExamResultModel, id)
+        if r:
+            session.delete(r)
+            session.commit()
+            return True
+        return False

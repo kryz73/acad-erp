@@ -8,6 +8,7 @@ pydantic-settings
 # --- Database & ORM ---
 sqlmodel
 psycopg2-binary
+psycopg[binary]
 
 # --- GraphQL ---
 strawberry-graphql[fastapi]

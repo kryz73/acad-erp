@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-tests:
+    name: Backend Tests & Coverage
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: acad_user
+          POSTGRES_PASSWORD: supersecret
+          POSTGRES_DB: acad_erp_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            backend/requirements-backend.txt
+            backend/requirements-test.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-backend.txt
+          pip install -r backend/requirements-test.txt
+
+      - name: Initialize Database and Run Unit Tests
+        env:
+          DATABASE_URL: postgresql://acad_user:supersecret@localhost:5432/acad_erp_db
+          SECRET_KEY: test_secret_key_for_ci_pipeline_32chars_long
+          ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: 60
+        run: |
+          cd backend
+          python seed_db.py
+          pytest -v --cov=models --cov=core --cov=auth
+
+      - name: Run GraphQL Layer Access Matrix Test
+        env:
+          DATABASE_URL: postgresql://acad_user:supersecret@localhost:5432/acad_erp_db
+          SECRET_KEY: test_secret_key_for_ci_pipeline_32chars_long
+          ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: 60
+        run: |
+          cd backend
+          python graphql_layer_test.py
+
+  frontend-build:
+    name: Frontend Next.js Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: front/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd front
+          npm ci
+
+      - name: Build Next.js Application
+        run: |
+          cd front
+          npm run build

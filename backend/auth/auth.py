@@ -31,6 +31,9 @@ db_dependency = Annotated[Session, Depends(get_session)]
 # End-point: create new user and add it to database
 @router.post("/", status_code = status.HTTP_201_CREATED)
 async def create_user(db: db_dependency, create_user_request: CreateUserRequest):
+    existing = db.exec(select(Users).where(Users.email == create_user_request.email)).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     create_user_model = Users(
         email = create_user_request.email, 
         password_hash = pwd_context.hash(create_user_request.password)
@@ -76,6 +79,8 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
     user = authenticate_user(form_data.username, form_data.password, db)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User account is deactivated")
     
     token = create_access_token(user.email, user.id, timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     return {'access_token': token, 'token_type': 'bearer'}

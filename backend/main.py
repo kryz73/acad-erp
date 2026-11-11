@@ -30,6 +30,7 @@ def on_startup():
 async def get_context(request: Request, session: Session = Depends(get_session)):
     user_id = None
     roles = []
+    user_dict = None
     
     auth_header = request.headers.get("Authorization")
     if auth_header:
@@ -39,15 +40,17 @@ async def get_context(request: Request, session: Session = Depends(get_session))
             token = auth_header
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-            user_id = payload.get('id')
-            if user_id is not None:
-                user = session.get(Users, user_id)
-                if user:
+            candidate_id = payload.get('id')
+            if candidate_id is not None:
+                user = session.get(Users, candidate_id)
+                if user and user.is_active:
+                    user_id = user.id
                     roles = [link.role.name for link in user.role_links]
+                    user_dict = {"id": user.id, "sub": user.email, "roles": roles}
         except JWTError:
             pass
 
-    return {"session": session, "user_id": user_id, "roles": roles}
+    return {"session": session, "user_id": user_id, "roles": roles, "user": user_dict}
 
 # Strawberry GraphQL Router
 graphql_app = GraphQLRouter(schema, context_getter=get_context)

@@ -72,3 +72,23 @@ class SchedulingMutation:
         session.commit()
         session.refresh(new_slot)
         return TimetableSlotType(**new_slot.dict())
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_room(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        r = session.get(RoomModel, id)
+        if r:
+            session.delete(r)
+            session.commit()
+            return True
+        return False
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_timetable_slot(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        s = session.get(TimetableSlotModel, id)
+        if s:
+            session.delete(s)
+            session.commit()
+            return True
+        return False

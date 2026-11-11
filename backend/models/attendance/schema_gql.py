@@ -3,7 +3,7 @@ from typing import Optional, List
 from datetime import date, time
 from sqlmodel import select
 from .model import AttendanceSessions, AttendanceRecords
-from core.security import IsAuthenticated, IsFaculty
+from core.security import IsAuthenticated, IsFaculty, is_elevated_role, check_user_ownership
 
 @strawberry.type
 class AttendanceSessionType:
@@ -37,7 +37,17 @@ class AttendanceQuery:
     def get_offering_attendance_sessions(self, info: strawberry.Info, offering_id: int) -> List[AttendanceSessionType]:
         session = info.context["session"]
         sessions = session.exec(select(AttendanceSessions).where(AttendanceSessions.offering_id == offering_id)).all()
-        return [AttendanceSessionType(id=s.id, offering_id=s.offering_id, session_date=s.session_date, conducted_by=s.conducted_by) for s in sessions]
+        return [
+            AttendanceSessionType(
+                id=s.id,
+                offering_id=s.offering_id,
+                session_date=s.session_date,
+                start_time=s.start_time,
+                end_time=s.end_time,
+                conducted_by=s.conducted_by
+            )
+            for s in sessions
+        ]
 
     @strawberry.field(permission_classes=[IsAuthenticated])
     def get_my_attendance_records(self, info: strawberry.Info, student_id: int) -> List[AttendanceRecordType]:
@@ -47,6 +57,8 @@ class AttendanceQuery:
             student = session.get(StudentProfiles, student_id)
             if student:
                 check_user_ownership(info, student.user_id)
+            else:
+                raise Exception("Student profile not found")
         records = session.exec(select(AttendanceRecords).where(AttendanceRecords.student_id == student_id)).all()
         return [AttendanceRecordType(id=r.id, student_id=r.student_id, status=r.status) for r in records]
 
@@ -81,6 +93,39 @@ class AttendanceQuery:
 
 @strawberry.type
 class AttendanceMutation:
-    @strawberry.mutation
-    def mark_attendance(self, session_id: int, student_id: int, status: str) -> AttendanceRecordType:
-        pass
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsFaculty])
+    def create_attendance_session(self, info: strawberry.Info, offering_id: int, session_date: date, start_time: time, end_time: time, conducted_by: int) -> AttendanceSessionType:
+        session = info.context["session"]
+        new_sess = AttendanceSessions(offering_id=offering_id, session_date=session_date, start_time=start_time, end_time=end_time, conducted_by=conducted_by)
+        session.add(new_sess)
+        session.commit()
+        session.refresh(new_sess)
+        return AttendanceSessionType(
+            id=new_sess.id,
+            offering_id=new_sess.offering_id,
+            session_date=new_sess.session_date,
+            start_time=new_sess.start_time,
+            end_time=new_sess.end_time,
+            conducted_by=new_sess.conducted_by
+        )
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsFaculty])
+    def mark_attendance(self, info: strawberry.Info, session_id: int, student_id: int, status: str) -> AttendanceRecordType:
+        session = info.context["session"]
+        existing = session.exec(
+            select(AttendanceRecords)
+            .where(AttendanceRecords.session_id == session_id)
+            .where(AttendanceRecords.student_id == student_id)
+        ).first()
+        if existing:
+            existing.status = status
+            session.add(existing)
+            session.commit()
+            session.refresh(existing)
+            return AttendanceRecordType(id=existing.id, student_id=existing.student_id, status=existing.status)
+        else:
+            rec = AttendanceRecords(session_id=session_id, student_id=student_id, status=status)
+            session.add(rec)
+            session.commit()
+            session.refresh(rec)
+            return AttendanceRecordType(id=rec.id, student_id=rec.student_id, status=rec.status)

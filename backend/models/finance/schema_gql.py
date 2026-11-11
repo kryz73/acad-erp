@@ -23,6 +23,8 @@ class FinanceQuery:
             student = session.get(StudentProfiles, student_id)
             if student:
                 check_user_ownership(info, student.user_id)
+            else:
+                raise Exception("Student profile not found")
         query = select(StudentFeeModel).where(StudentFeeModel.student_id == student_id)
         if semester_id is not None:
             query = query.where(StudentFeeModel.semester_id == semester_id)
@@ -37,11 +39,22 @@ class FinanceQuery:
             student = session.get(StudentProfiles, student_id)
             if student:
                 check_user_ownership(info, student.user_id)
+            else:
+                raise Exception("Student profile not found")
         fees = session.exec(
             select(StudentFeeModel)
             .where(StudentFeeModel.student_id == student_id)
             .where(StudentFeeModel.receipt_url != None)
         ).all()
+        return [StudentFeeType(id=f.id, student_id=f.student_id, semester_id=f.semester_id, amount=f.amount, status=f.status, receipt_url=f.receipt_url) for f in fees]
+
+    @strawberry.field(permission_classes=[IsAuthenticated, IsAdmin])
+    def get_all_fees(self, info: strawberry.Info, semester_id: Optional[int] = None) -> List[StudentFeeType]:
+        session = info.context["session"]
+        query = select(StudentFeeModel)
+        if semester_id is not None:
+            query = query.where(StudentFeeModel.semester_id == semester_id)
+        fees = session.exec(query).all()
         return [StudentFeeType(id=f.id, student_id=f.student_id, semester_id=f.semester_id, amount=f.amount, status=f.status, receipt_url=f.receipt_url) for f in fees]
 
 @strawberry.type
@@ -89,3 +102,13 @@ class FinanceMutation:
         session.commit()
         session.refresh(fee)
         return StudentFeeType(id=fee.id, student_id=fee.student_id, semester_id=fee.semester_id, amount=fee.amount, status=fee.status, receipt_url=fee.receipt_url)
+
+    @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
+    def delete_student_fee(self, info: strawberry.Info, id: int) -> bool:
+        session = info.context["session"]
+        f = session.get(StudentFeeModel, id)
+        if f:
+            session.delete(f)
+            session.commit()
+            return True
+        return False

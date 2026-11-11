@@ -55,11 +55,18 @@ class IdentityQuery:
 
     @strawberry.field(permission_classes=[IsAuthenticated])
     def get_me(self, info: strawberry.Info) -> Optional[MeType]:
-        user = info.context["user"]
-        if not user:
+        user = info.context.get("user")
+        if user:
+            return MeType(id=user.get("id", 0), email=user.get("sub", ""), roles=user.get("roles", []))
+        user_id = info.context.get("user_id")
+        if not user_id:
             return None
-        # user dictionary contains sub (email), roles (list of strings), id (int)
-        return MeType(id=user.get("id", 0), email=user.get("sub", ""), roles=user.get("roles", []))
+        session = info.context["session"]
+        u = session.get(UserModel, user_id)
+        if not u:
+            return None
+        roles = [link.role.name for link in u.role_links]
+        return MeType(id=u.id, email=u.email, roles=roles)
 
 @strawberry.type
 class IdentityMutation:
@@ -67,6 +74,9 @@ class IdentityMutation:
     def create_user(self, info: strawberry.Info, email: str, password: str) -> UserType:
         from auth.auth import pwd_context
         session = info.context["session"]
+        existing = session.exec(select(UserModel).where(UserModel.email == email)).first()
+        if existing:
+            raise Exception("User with this email already exists")
         hashed_password = pwd_context.hash(password)
         new_user = UserModel(email=email, password_hash=hashed_password)
         session.add(new_user)
@@ -94,6 +104,9 @@ class IdentityMutation:
     @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
     def create_role(self, info: strawberry.Info, name: str, description: Optional[str] = None) -> RoleType:
         session = info.context["session"]
+        existing = session.exec(select(RoleModel).where(RoleModel.name == name)).first()
+        if existing:
+            raise Exception(f"Role '{name}' already exists")
         new_role = RoleModel(name=name, description=description)
         session.add(new_role)
         session.commit()
@@ -103,6 +116,9 @@ class IdentityMutation:
     @strawberry.mutation(permission_classes=[IsAuthenticated, IsAdmin])
     def assign_role_to_user(self, info: strawberry.Info, user_id: int, role_id: int) -> bool:
         session = info.context["session"]
+        existing = session.get(UserRoleModel, (user_id, role_id))
+        if existing:
+            return True
         user_role = UserRoleModel(user_id=user_id, role_id=role_id)
         session.add(user_role)
         session.commit()

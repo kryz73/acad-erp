@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, time, datetime, timezone
 from sqlmodel import Session
 from core.database import engine, SQLModel
 from auth.auth import pwd_context
@@ -161,8 +161,8 @@ def seed_db():
             start_date=date(2026, 8, 1), 
             end_date=date(2026, 12, 15), 
             is_current=True,
-            registration_window_start=date(2026, 7, 1),
-            registration_window_end=date(2026, 8, 15)
+            registration_window_start=datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc),
+            registration_window_end=datetime(2026, 8, 15, 23, 59, tzinfo=timezone.utc)
         )
         session.add(sem_1)
         session.commit()
@@ -172,7 +172,18 @@ def seed_db():
         session.commit()
 
         # 4. PROFILES
-        faculty_profiles = []
+        demo_faculty_profile = FacultyProfiles(
+            user_id=faculty_user.id,
+            employee_id="FAC-DEMO",
+            first_name="John",
+            last_name="Doe",
+            department_id=depts["CS"].id,
+            title="Associate Professor"
+        )
+        session.add(demo_faculty_profile)
+        session.commit()
+
+        faculty_profiles = [demo_faculty_profile]
         for i, (code, dept) in enumerate(depts.items()):
             email = f"faculty_{code.lower()}@college.edu"
             u = Users(email=email, password_hash=pwd_context.hash("password123"), is_active=True)
