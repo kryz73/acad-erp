@@ -1,0 +1,19 @@
+# --- Core Framework & Server ---
+fastapi
+uvicorn[standard]
+
+# --- Configuration & Environment ---
+pydantic-settings
+
+# --- Database & ORM ---
+sqlmodel
+psycopg2-binary
+psycopg[binary]
+
+# --- GraphQL ---
+strawberry-graphql[fastapi]
+
+# --- Authentication & Security ---
+python-jose[cryptography]
+passlib[argon2]
+python-multipart
