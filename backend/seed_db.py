@@ -110,9 +110,10 @@ COURSE_FACULTY_MAP = {
 DEFAULT_PASSWORD = "1234"
 
 
-def seed_db():
-    print("Dropping existing tables...")
-    SQLModel.metadata.drop_all(engine)
+def seed_db(drop_existing: bool = True):
+    if drop_existing:
+        print("Dropping existing tables...")
+        SQLModel.metadata.drop_all(engine)
     print("Creating tables...")
     SQLModel.metadata.create_all(engine)
 

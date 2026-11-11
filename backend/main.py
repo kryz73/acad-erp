@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlmodel import SQLModel, Session
+from sqlmodel import SQLModel, Session, select
 from core.database import engine, get_session
 from models import schema
 from strawberry.fastapi import GraphQLRouter
@@ -35,6 +35,17 @@ else:
 @app.on_event("startup")
 def on_startup():
     SQLModel.metadata.create_all(engine)
+    # Automatically seed the database on initial deployment if empty
+    try:
+        with Session(engine) as session:
+            first_user = session.exec(select(Users)).first()
+            if not first_user:
+                print("Database is empty. Automatically seeding initial demo data...")
+                from seed_db import seed_db
+                seed_db(drop_existing=False)
+                print("Automatic seeding complete!")
+    except Exception as e:
+        print(f"Startup database check/seed notice: {e}")
 
 # GraphQL context getter to provide database session and user info
 async def get_context(request: Request, session: Session = Depends(get_session)):
